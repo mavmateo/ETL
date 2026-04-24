@@ -2,6 +2,8 @@ import os
 import sys
 import argparse
 from pathlib import Path
+import json
+import csv
 
 import requests
 import sqlite3
@@ -39,10 +41,45 @@ class DataPipeLine:
         self.raw_data = response.json()
         print(f"[EXTRACT], Successfully extracted {len(self.raw_data)} records from source url")
     
-
+    # put raw_data into an empty array
+    #go through all the filenames in the directory
+    #join filename to directory link one by one for all
+    #process json files
+    #process csv files
+    #skip files of unknown types
+    #print total records extracted
     def _extract_from_directory_(self, directory: str) -> list[Dict]:
+         print(f"[EXTRACT], Extracting files from path {directory}")
+         self.raw_data = []
+
+         for filename in os.listdir(directory):
+              filepath = os.path.join(directory, filename)
+
+              if filename.endswith(".json"):
+                   with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        #support both a list of records or just a single record
+                        records = data if isinstance(data, list) else [data]
+                        self.raw_data.extend(records)
+                        print(f"[EXTRACT]{filename} -> {len(records)} record(s) ")
+
+              elif filename.endswith(".csv"):
+                   with open(filepath, "r", encoding="utf-8") as f:
+                        reader = csv.DictReader(f)
+                        records = list(reader)
+                        self.raw_data.extend(records)
+                        print(f"[EXTRACT]{filename} -> {len(records)} record(s) ")
+              
+              else : 
+                   print(f"Skipping unsupported file: {filename}")     
+
+         print(f"[EXTRACT] Total records extracted: {len(self.raw_data)}") 
+
+         return self.raw_data       
 
 
+
+       
     
 
     #
