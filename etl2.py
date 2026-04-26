@@ -16,17 +16,19 @@ class DataPipeLine:
     #change source url to source
     #make provision to check of directory exists with os.path.isdir
     def __init__(self, source :str, db_path :str = "pipeline_output.db"):
-        self.source_url = source_url
+        self.source = source
         self.db_path = db_path
         self.raw_data = []
         self.transformed_data = []
         self.is_local = os.path.isdir(source)
+       
 
     # create function to check which extract type to call
-    def extract(self) -> list[Dict]:
-        if self.is_local(self):
-            return self._extract_from_directory_(self.source)
-        return self._extract_from_url_(self.source)
+    def extract(self) -> list[dict]:
+        if self.is_local:
+            return self._extract_from_directory(self.source)
+        return self._extract_from_url(self.source)       
+     
 
 
 
@@ -34,12 +36,15 @@ class DataPipeLine:
     
     # add len of data extracted to show number of records
     # checking state of extraction is raise_for_status
-    def _extract_from_url_(self, source_url : str) -> list[Dict]:
-        print("[EXTRACT], Extracting data from source url ........")
+    def _extract_from_url(self, source_url : str) -> list[dict]:
+        print("[EXTRACT], Extracting records from external url......")
+        self.raw_data = []
         response = requests.get(source_url, timeout=10)
         response.raise_for_status()
         self.raw_data = response.json()
-        print(f"[EXTRACT], Successfully extracted {len(self.raw_data)} records from source url")
+        print(f"[EXTRACT], Successfully extracted {len(self.raw_data)} records ...")
+        return self.raw_data
+      
     
     # put raw_data into an empty array
     #go through all the filenames in the directory
@@ -48,120 +53,124 @@ class DataPipeLine:
     #process csv files
     #skip files of unknown types
     #print total records extracted
-    def _extract_from_directory_(self, directory: str) -> list[Dict]:
-         print(f"[EXTRACT], Extracting files from path {directory}")
+    def _extract_from_directory(self, directory: str) -> list[dict]:
          self.raw_data = []
-
          for filename in os.listdir(directory):
-              filepath = os.path.join(directory, filename)
+             filepath = os.path.join(directory, filename)
 
-              if filename.endswith(".json"):
-                   with open(filepath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        #support both a list of records or just a single record
-                        records = data if isinstance(data, list) else [data]
-                        self.raw_data.extend(records)
-                        print(f"[EXTRACT]{filename} -> {len(records)} record(s) ")
+             if filepath.endswith(".json"):
+                 with open(filepath , "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    records = data if isinstance(data, list) else [data]
+                    self.raw_data.extend(records)
+                    print(f"[EXTRACT],  {filename} -> {len(records)} record(s)")
 
-              elif filename.endswith(".csv"):
-                   with open(filepath, "r", encoding="utf-8") as f:
-                        reader = csv.DictReader(f)
-                        records = list(reader)
-                        self.raw_data.extend(records)
-                        print(f"[EXTRACT]{filename} -> {len(records)} record(s) ")
-              
-              else : 
-                   print(f"Skipping unsupported file: {filename}")     
+             elif filepath.endswith(".csv"):
+                with open(filepath, "r" , encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    records = list(reader) 
+                    self.raw_data.extend(records)
+                    print(f"[EXTRACT], {filename} -> {len(records)} record(s)")
 
-         print(f"[EXTRACT] Total records extracted: {len(self.raw_data)}") 
+             else:
+                print(f"[EXTRACT], skipping unsupported file: {filename} ")     
+                return self.raw_data 
 
-         return self.raw_data       
+
+
+
+
 
 
 
        
     
 
-    #
-    def transform(self, data :list[Dict]) -> list[Dict]:
-        print("[TRANSFORM], Transforming the extracted data ........ ")
+    def transform(self, data :list[dict]) -> list[dict]:
+        print("[TRANSFORM], Transforming raw data ........")
         self.transformed_data = []
 
         for record in data:
-            transformed = {
-                                 
-                           "id"       :record.get("id").strip(),
-                           "name"     :record.get("name", "").strip().title(),
-                           "email"    :record.get("email", "").strip().lower(),
-                           "username" :record.get("username", "").strip().lower(),
-                           "city"     :record.get("city", "").get("city", "Unknown"),
-                           "company"  :record.get("company", "").get("company", "Unknown"),
+         transformed = {
+            
+                "id"         : record.get("id", "").strip(),
+                "name"       : record.get("name", "").strip().title(),
+                "email"      : record.get("email", "").strip().lower(),
+                "username"   : record.get("username","").strip().lower(),
+                "city"       : record.get("address", "").get("city", "Unkwown"),
+                "company"    : record.get("company").get("name", "Unkown")
+        }
 
-                          }
-            if not transformed["id"] or not transformed["email"]:
-                print(f"Skipping {record} missing id and email entries ")
-
-
-        return self.transformed_data        
-    
+        if not transformed["id"] or not transformed["email"]:
+            print(f"[TRANSFORM], Skipping records with missing id or email {records}")
 
 
-    def load(self, data :list[Dict]) -> None:
-        print(f"[LOAD], Loading transformed data into {self.db_path}")
+
+            
+
+    def load(self, data :list[dict]) -> None:
+        print(f"[LOAD], loading data into db {self.db_path} ")
+        
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS users(
-                           id       TEXT PRIMARY KEY,
-                           name     TEXT,
-                           email    TEXT UNIQUE,
-                           username TEXT,
-                           city     TEXT,
-                           company  TEXT
-                       )
-
-
-                   """)
+                CREATE TABLE IF NOT EXISTS users (
+                    id       INTEGER PRIMARY KEY,
+                    name     TEXT,
+                    email    TEXT UNIQUE,
+                    username TEXT,
+                    city     TEXT,
+                    company  TEXT, 
+                )
+        """) 
         inserted,skipped = 0,0
-        for record in data:
+        for record in data :
             try:
                 cursor.execute("""
+                INSERT OR REPLACE INTO users 
+                     (id, name, email, username, city, company)
 
-                  INSERT or REPLACE INTO users 
-                               (id, name, email, username, city, company)
-                            
-                               VALUES
-                              (:id, :name, :email, :username, :city, :company)
-                               """, record),
+                     VALUES
+
+                     (:id, :name, :email, :username, :city, :company)
+                
+                """, record)
                 inserted+=1
-            except sqlite3.IntergrityError as e:  
-                print(f"Skipping duplicate error -  : {e}")
-                skipped+=1  
+            except sqlite3.IntegrityError as e:
+                print(f"[LOAD], Skipping duplicate record {record['id']}: {e}")   
+                skipped+=1
 
-                conn.commit()
-                conn.close()
-                print(f"[LOAD], Successfully loaded {inserted} records and skipped {skipped} duplicate records")
+        conn.commit()
+        conn.close()
+        print(f"[LOAD], loaded -> {inserted}, skipped -> {skipped} ")
+
+          
+     
+                          
 
 
     def run(self) -> None:
         print("=" * 50)
-        print("[RUN], Executing the pipeline ..........")
+        print("[RUN] , Executing the ETL Pipeline ......")
         print("=" * 50)
         raw = self.extract()
-        transformed = self.transform(raw) 
-        self.load(transformed) 
+        transformed = self.transform(raw)
+        self.load(transformed)
         print("=" * 50)
-        print("[RUN], Pipeline executed successfully ..........")
+        print("[RUN] , Pipeline Complete")
         print("=" * 50)
+
+    
     
 
 def parse_args() -> argparse.Namespace:
-            parser = argparse.ArgumentParser(description="Client data cleaning cli script")
-            parser.add_argument("source", help="path to the raw input file" )
-            parser.add_argument("--db", default="pipleline_output.db", help="path to SQLite output db" )
+    parser = argparse.ArgumentParser(description=" client data ETL pipeline")
+    parser.add_argument("source", help="source url for data extraction")
+    parser.add_argument("--db", default="pipeline_output.db", help="path to the sqlite output database")
 
-            return parser.parse_args()
+    return parser.parse_args()
+          
 
 
 if __name__ == "__main__":

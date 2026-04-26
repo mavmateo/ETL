@@ -37,8 +37,8 @@ class DataPipeLine:
                     "name": record.get("name", "").strip().title(),
                     "email": record.get("email","").strip().lower(),
                     "userame": record.get("username","").strip().lower(),
-                    "city": record.get("city", "").get("city", "Unknown"),
-                    "company": record.get("company", "").get("company", "Unknown"),
+                    "city": record.get("address", "").get("city", "Unknown"),
+                    "company": record.get("company", "").get("name", "Unknown"),
              }
 
          if not transformed["id"] or not transformed["email"]:
